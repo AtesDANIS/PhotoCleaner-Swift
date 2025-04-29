@@ -1,24 +1,28 @@
 import SwiftUI
 import Photos
 import PhotosUI
-import CoreMotion // Required for shake detection
+import CoreMotion
 
 struct ContentView: View {
     @State private var selectedImage: UIImage?
     @State private var currentAsset: PHAsset?
-    @State private var photoHistory: [PHAsset] = [] // Store history of viewed photos
-    @State private var historyIndex: Int = -1 // Track current position in history
+    @State private var photoHistory: [PHAsset] = []
+    @State private var historyIndex: Int = -1
     @State private var showingPermissionDenied = false
     @State private var showingDeleteConfirmation = false
     @State private var showingDeleteError = false
     @State private var downloadProgress: Double = 0.0
     @State private var isDownloading: Bool = false
+    @State private var isSampleImage: Bool = false // Track if current image is a sample
+
+    // List of sample image names in the app bundle
+    private let sampleImageNames = ["sample1", "sample2", "sample3", "sample4"]
 
     var body: some View {
         VStack {
             if let image = selectedImage {
-                if downloadProgress < 1.0 {
-                    // Show progress bar during fetching
+                if downloadProgress < 1.0 && !isSampleImage {
+                    // Show progress bar during fetching (not for sample images)
                     VStack {
                         ProgressView(value: downloadProgress, total: 1.0)
                             .progressViewStyle(.linear)
@@ -44,8 +48,8 @@ struct ContentView: View {
                     }
                     .font(.largeTitle.bold())
                     .controlSize(.large)
-                    .disabled(historyIndex <= 0) // Disable if no previous photos
 
+                    // Delete Button (disabled for sample images)
                     Button("🗑️", role: .destructive) {
                         deleteCurrentPhoto()
                     }
@@ -59,7 +63,24 @@ struct ContentView: View {
                     .controlSize(.large)
                 }
                 .padding()
+
+                // Optional: Inform user if viewing sample images
+                if isSampleImage {
+                    Text("No photos found in gallery. Showing sample image.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 5)
+                }
             } else {
+                Text("App needs access to your photos to show you a random photo from your gallery.")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                
+                Text("Please grant permission in Settings.")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.bottom, 5)
+                
                 Button("🔄") {
                     checkPermissionAndShowPhoto()
                 }
@@ -71,12 +92,12 @@ struct ContentView: View {
         .onAppear {
             checkPermissionAndShowPhoto()
         }
-        .onChange(of: selectedImage) { _, newValue in
-            print("UI: selectedImage changed to \(newValue == nil ? "nil" : "non-nil")")
-        }
-        .onChange(of: downloadProgress) { _, newValue in
-            print("UI: downloadProgress updated to \(newValue)")
-        }
+//        .onChange(of: selectedImage) { _, newValue in
+//            print("UI: selectedImage changed to \(newValue == nil ? "nil" : "non-nil")")
+//        }
+//        .onChange(of: downloadProgress) { _, newValue in
+//            print("UI: downloadProgress updated to \(newValue)")
+//        }
         .alert("Permission Denied", isPresented: $showingPermissionDenied) {
             Button("Open Settings", action: openSettings)
             Button("Cancel", role: .cancel) { }
@@ -84,7 +105,9 @@ struct ContentView: View {
             Text("Please enable photo access in Settings to use this feature.")
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.deviceDidShakeNotification)) { _ in
-            deleteCurrentPhoto()
+            if !isSampleImage { // Prevent shake-to-delete for sample images
+                deleteCurrentPhoto()
+            }
         }
     }
 
@@ -112,71 +135,94 @@ struct ContentView: View {
             self.downloadProgress = 0.0
             self.isDownloading = true
             self.selectedImage = nil
+            self.isSampleImage = false
+            self.currentAsset = nil
         }
 
         let fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
 
         let assets = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-        guard assets.count > 0 else {
-            DispatchQueue.main.async {
-                print("No assets found")
-                self.isDownloading = false
-                self.selectedImage = nil
+        if assets.count > 0 {
+            // Fetch a random photo from the library
+            let randomIndex = Int.random(in: 0..<assets.count)
+            let asset = assets.object(at: randomIndex)
+            self.currentAsset = asset
+
+            // Update history
+            if historyIndex < photoHistory.count - 1 {
+                photoHistory = Array(photoHistory.prefix(historyIndex + 1))
             }
-            return
-        }
+            photoHistory.append(asset)
+            historyIndex += 1
 
-        let randomIndex = Int.random(in: 0..<assets.count)
-        let asset = assets.object(at: randomIndex)
-        self.currentAsset = asset
+            let manager = PHImageManager.default()
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .opportunistic
+            options.isSynchronous = false
+            options.isNetworkAccessAllowed = true
 
-        // Update history
-        if historyIndex < photoHistory.count - 1 {
-            // If navigating forward after going back, truncate future history
-            photoHistory = Array(photoHistory.prefix(historyIndex + 1))
-        }
-        photoHistory.append(asset)
-        historyIndex += 1
-
-        let manager = PHImageManager.default()
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .opportunistic
-        options.isSynchronous = false
-        options.isNetworkAccessAllowed = true
-
-        options.progressHandler = { progress, error, stop, info in
-            DispatchQueue.main.async {
-                print("Progress handler: progress=\(progress), error=\(String(describing: error))")
-                self.downloadProgress = progress
-                self.isDownloading = true
-                if let error = error {
-                    print("iCloud error: \(error)")
-                    self.isDownloading = false
-                    self.selectedImage = nil
+            options.progressHandler = { progress, error, stop, info in
+                DispatchQueue.main.async {
+                    print("Progress handler: progress=\(progress), error=\(String(describing: error))")
+                    self.downloadProgress = progress
+                    self.isDownloading = true
+                    if let error = error {
+                        print("iCloud error: \(error)")
+                        self.isDownloading = false
+                        self.selectedImage = nil
+                    }
                 }
             }
-        }
 
-        manager.requestImage(for: asset,
-                             targetSize: PHImageManagerMaximumSize,
-                             contentMode: .aspectFit,
-                             options: options) { image, info in
+            manager.requestImage(for: asset,
+                                 targetSize: PHImageManagerMaximumSize,
+                                 contentMode: .aspectFit,
+                                 options: options) { image, info in
+                DispatchQueue.main.async {
+                    print("Image request completed: image=\(image != nil), info=\(String(describing: info))")
+                    self.selectedImage = image
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.isDownloading = false
+                    }
+                    if image == nil {
+                        print("Image is nil, info: \(String(describing: info))")
+                        // Fallback to sample image if photo fetch fails
+                        self.loadSampleImage()
+                    }
+                }
+            }
+        } else {
+            // No photos in library, load a sample image
             DispatchQueue.main.async {
-                print("Image request completed: image=\(image != nil), info=\(String(describing: info))")
-                self.selectedImage = image
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.isDownloading = false
-                }
-                if image == nil {
-                    print("Image is nil, info: \(String(describing: info))")
-                }
+                print("No assets found in your gallery, loading sample images.")
+                print("It will work in restricted mode.")
+                self.loadSampleImage()
             }
         }
     }
 
+    func loadSampleImage() {
+        // Load a random sample image from the app bundle
+        let randomImageName = sampleImageNames.randomElement()!
+        if let image = UIImage(named: randomImageName) {
+            self.selectedImage = image
+            self.isSampleImage = true
+            self.isDownloading = false
+            self.currentAsset = nil
+            // Clear history for sample images to prevent navigation issues
+            self.photoHistory.removeAll()
+            self.historyIndex = -1
+        } else {
+            print("Failed to load sample image: \(randomImageName)")
+            self.selectedImage = nil
+            self.isSampleImage = false
+            self.isDownloading = false
+        }
+    }
+
     func goBack() {
-        guard historyIndex > 0 else { return }
+        guard historyIndex > 0, !isSampleImage else { return }
         historyIndex -= 1
         let previousAsset = photoHistory[historyIndex]
         self.currentAsset = previousAsset
@@ -221,7 +267,7 @@ struct ContentView: View {
     }
 
     func deleteCurrentPhoto() {
-        guard let asset = currentAsset else { return }
+        guard let asset = currentAsset, !isSampleImage else { return }
 
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.deleteAssets([asset] as NSFastEnumeration)
@@ -229,16 +275,13 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 if success {
                     print("Photo deleted, resetting selectedImage")
-                    // Remove the deleted asset from history
                     self.photoHistory.remove(at: self.historyIndex)
                     self.historyIndex -= 1
                     self.selectedImage = nil
                     self.currentAsset = nil
                     if self.historyIndex >= 0 {
-                        // Show the previous photo if available
                         self.goBack()
                     } else {
-                        // Fetch a new random photo if no history remains
                         self.fetchRandomPhoto()
                     }
                 } else {
@@ -256,7 +299,6 @@ struct ContentView: View {
     }
 }
 
-// Extension to handle shake gesture
 extension UIDevice {
     static let deviceDidShakeNotification = Notification.Name(rawValue: "UIDeviceDeviceDidShakeNotification")
 }
