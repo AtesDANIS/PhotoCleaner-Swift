@@ -8,6 +8,9 @@
             <PersistentString
                value = "assets.count">
             </PersistentString>
+            <PersistentString
+               value = "self.currentAsset">
+            </PersistentString>
          </PersistentStrings>
       </ContextState>
       <ContextState
@@ -15,6 +18,20 @@
          <PersistentStrings>
             <PersistentString
                value = "asset">
+            </PersistentString>
+         </PersistentStrings>
+      </ContextState>
+      <ContextState
+         contextName = "ContentView.deleteCurrentPhoto():ContentView.swift">
+         <PersistentStrings>
+            <PersistentString
+               value = "currentAsset">
+            </PersistentString>
+            <PersistentString
+               value = "isSampleImage">
+            </PersistentString>
+            <PersistentString
+               value = "self.currentAsset">
             </PersistentString>
          </PersistentStrings>
       </ContextState>

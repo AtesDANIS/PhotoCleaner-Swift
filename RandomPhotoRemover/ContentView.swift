@@ -72,14 +72,10 @@ struct ContentView: View {
                         .padding(.top, 5)
                 }
             } else {
-                Text("App needs access to your photos to show you a random photo from your gallery.")
+                Text("App needs access to your photos to show you a random photo from your gallery. Please grant permission in Settings.")
                     .font(.caption)
                     .foregroundColor(.gray)
-                
-                Text("Please grant permission in Settings.")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.bottom, 5)
+              
                 
                 Button("🔄") {
                     checkPermissionAndShowPhoto()
@@ -130,14 +126,14 @@ struct ContentView: View {
 
     func fetchRandomPhoto() {
         // Reset state
-        DispatchQueue.main.async {
-            print("Starting fetchRandomPhoto, resetting selectedImage")
-            self.downloadProgress = 0.0
-            self.isDownloading = true
-            self.selectedImage = nil
-            self.isSampleImage = false
-            self.currentAsset = nil
-        }
+//        DispatchQueue.main.async {
+//            print("Starting fetchRandomPhoto, resetting selectedImage")
+//            self.downloadProgress = 0.0
+//            self.isDownloading = true
+//            self.selectedImage = nil
+//            self.isSampleImage = false
+//            self.currentAsset = nil
+//        }
 
         let fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
@@ -267,7 +263,10 @@ struct ContentView: View {
     }
 
     func deleteCurrentPhoto() {
-        guard let asset = currentAsset, !isSampleImage else { return }
+        if currentAsset == nil || isSampleImage {
+            return
+        }
+        let asset = currentAsset!
 
         PHPhotoLibrary.shared().performChanges({
             PHAssetChangeRequest.deleteAssets([asset] as NSFastEnumeration)
